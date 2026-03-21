@@ -1,0 +1,185 @@
+//////// КЛАСИ
+using System.Collections.Generic;
+using System.Reflection.Emit;
+
+public class Game
+{
+    public int Id { get; set; }
+    public string Title { get; set; }
+    public string Genre { get; set; }
+    public int MinPlayers { get; set; }
+    public int MaxPlayers { get; set; }
+
+    public List<Session> Sessions { get; set; } = new();
+}
+
+public class Member
+{
+    public int Id { get; set; }
+    public string FullName { get; set; }
+    public DateTime JoinDate { get; set; }
+
+    public List<MemberSession> MemberSessions { get; set; } = new();
+}
+
+public class Session
+{
+    public int Id { get; set; }
+    public int GameId { get; set; }
+    public DateTime Date { get; set; }
+    public int DurationMinutes { get; set; }
+
+    public Game Game { get; set; }
+    public List<MemberSession> MemberSessions { get; set; } = new();
+}
+
+public class MemberSession
+{
+    public int Id { get; set; }
+    public int MemberId { get; set; }
+    public int SessionId { get; set; }
+
+    public Member Member { get; set; }
+    public Session Session { get; set; }
+}
+///////////////////////////////////////////
+
+
+public class MyDb : DbContext
+{
+    public DbSet<Game> Games { get; set; }
+    public DbSet<User> Users { get; set; }
+    public DbSet<GameSession> Sessions { get; set; }
+    public DbSet<UserSession> UserSessions { get; set; }
+
+    protected override void OnConfiguring(DbContextOptionsBuilder options)
+        => options.UseSqlServer("Server=(localdb)\\mssqllocaldb;Database=GamesDb;Trusted_Connection=True;");
+
+    protected override void OnModelCreating(ModelBuilder model)
+    {
+        model.Entity<Game>()
+            .Property(x => x.Name)
+            .IsRequired()
+            .HasMaxLength(100);
+
+        model.Entity<Game>()
+            .HasCheckConstraint("CheckPlayers", "[Min] > 0 AND [Max] > 0 AND [Min] <= [Max]");
+
+        model.Entity<GameSession>()
+            .HasOne(s => s.Game)
+            .WithMany(g => g.Sessions)
+            .HasForeignKey(s => s.GameId);
+
+        model.Entity<UserSession>()
+            .HasOne(us => us.User)
+            .WithMany(u => u.UserSessions)
+            .HasForeignKey(us => us.UserId);
+
+        model.Entity<UserSession>()
+            .HasOne(us => us.GameSession)
+            .WithMany(s => s.UserSessions)
+            .HasForeignKey(us => us.GameSessionId);
+    }
+}
+/////////////////////////////////////////
+public static class Seeder
+{
+    public static void AddData(MyDb db)
+    {
+        if (db.Games.Any()) return;
+
+        var games = new List<Game>
+        {
+            new Game { Name = "Catan", Type = "Strategy", Min = 3, Max = 4 },
+            new Game { Name = "Uno", Type = "Card", Min = 2, Max = 10 },
+            new Game { Name = "Chess", Type = "Logic", Min = 2, Max = 2 },
+            new Game { Name = "Dixit", Type = "Fun", Min = 3, Max = 6 },
+            new Game { Name = "Monopoly", Type = "Money", Min = 2, Max = 6 }
+        };
+
+        var users = new List<User>
+        {
+            new User { Name = "Ivan", JoinDate = DateTime.Now.AddDays(-10) },
+            new User { Name = "Petro", JoinDate = DateTime.Now.AddDays(-9) },
+            new User { Name = "Olya", JoinDate = DateTime.Now.AddDays(-8) },
+            new User { Name = "Anna", JoinDate = DateTime.Now.AddDays(-7) },
+            new User { Name = "Oleg", JoinDate = DateTime.Now.AddDays(-6) }
+        };
+
+        db.Games.AddRange(games);
+        db.Users.AddRange(users);
+        db.SaveChanges();
+
+        var rand = new Random();
+
+        var sessions = new List<GameSession>();
+
+        for (int i = 0; i < 10; i++)
+        {
+            sessions.Add(new GameSession
+            {
+                GameId = games[rand.Next(games.Count)].Id,
+                Date = DateTime.Now.AddDays(-rand.Next(5)),
+                Time = rand.Next(30, 120)
+            });
+        }
+
+        db.Sessions.AddRange(sessions);
+        db.SaveChanges();
+
+        foreach (var s in sessions)
+        {
+            var count = rand.Next(2, 4);
+
+            var selected = users.OrderBy(x => rand.Next()).Take(count);
+
+            foreach (var u in selected)
+            {
+                db.UserSessions.Add(new UserSession
+                {
+                    UserId = u.Id,
+                    GameSessionId = s.Id
+                });
+            }
+        }
+
+        db.SaveChanges();
+    }
+}
+////////////////////////////////////// Main
+
+using Microsoft.EntityFrameworkCore;
+
+class Program
+{
+    static void Main()
+    {
+        using (var db = new MyDb())
+        {
+            db.Database.EnsureCreated();
+
+            Seeder.AddData(db);
+
+            var list = db.Sessions
+                .Include(s => s.Game)
+                .Include(s => s.UserSessions)
+                .ThenInclude(us => us.User)
+                .ToList();
+
+            foreach (var s in list)
+            {
+                Console.WriteLine("Game: " + s.Game.Name);
+                Console.WriteLine("Date: " + s.Date);
+                Console.WriteLine("Time: " + s.Time);
+
+                Console.WriteLine("Users:");
+                foreach (var us in s.UserSessions)
+                {
+                    Console.WriteLine(" - " + us.User.Name);
+                }
+
+                Console.WriteLine("------");
+            }
+        }
+    }
+}
