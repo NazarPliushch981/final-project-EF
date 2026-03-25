@@ -1,0 +1,107 @@
+class Db
+{
+    public static IDbConnection Get()
+    {
+        return new SqlConnection("Server=(localdb)\\mssqllocaldb;Database=GamesDb;Trusted_Connection=True;");
+    }
+}
+class Program
+{
+    static void Main()
+    {
+        while (true)
+        {
+            Console.WriteLine("1 - Всі сесії");
+            Console.WriteLine("2 - Топ ігор");
+            Console.WriteLine("3 - Рейтинг");
+            Console.WriteLine("4 - Cтатистика");
+            Console.WriteLine("5 - За період");
+            Console.WriteLine("0 - Вихід");
+
+            var key = Console.ReadLine();
+
+            if (key == "1") ShowSessions();
+            if (key == "2") TopGames();
+            if (key == "3") TopUsers();
+            if (key == "4") Stats();
+            if (key == "5") ByPeriod();
+            if (key == "0") break;
+        }
+    }
+
+static void ShowSessions()
+{
+    using (var db = Db.Get())
+    {
+        var sql = @"
+        SELECT g.Name, s.Date, s.Time, u.Name as UserName
+        FROM Sessions s
+        JOIN Games g ON s.GameId = g.Id
+        JOIN UserSessions us ON us.GameSessionId = s.Id
+        JOIN Users u ON u.Id = us.UserId
+        ORDER BY s.Date";
+
+        var data = db.Query(sql);
+
+        foreach (var x in data)
+        {
+            Console.WriteLine($"{x.Name} | {x.Date} | {x.Time} хв | {x.UserName}");
+        }
+    }
+}
+
+static void TopGames()
+{
+    using (var db = Db.Get())
+    {
+        var sql = @"
+        SELECT TOP 3 g.Name, SUM(s.Time)/60.0 as Hours
+        FROM Sessions s
+        JOIN Games g ON s.GameId = g.Id
+        GROUP BY g.Name
+        ORDER BY Hours DESC";
+
+        var data = db.Query(sql);
+
+        foreach (var x in data)
+        {
+            Console.WriteLine($"{x.Name} - {x.Hours:F2} год");
+        }
+    }
+}
+
+static void TopUsers()
+{
+    using (var db = Db.Get())
+    {
+        var sql = @"
+        SELECT u.Name, SUM(s.Time) as TotalTime
+        FROM Users u
+        JOIN UserSessions us ON u.Id = us.UserId
+        JOIN Sessions s ON s.Id = us.GameSessionId
+        GROUP BY u.Name
+        ORDER BY TotalTime DESC";
+
+        var data = db.Query(sql);
+
+        foreach (var x in data)
+        {
+            Console.WriteLine($"{x.Name} - {x.TotalTime} хв");
+        }
+    }
+}
+
+static void Stats()
+{
+    using (var db = Db.Get())
+    {
+        var sql = @"
+        SELECT COUNT(*) as CountSessions, SUM(Time) as TotalTime
+        FROM Sessions";
+
+        var x = db.QueryFirst(sql);
+
+        Console.WriteLine($"Сесій: {x.CountSessions}");
+        Console.WriteLine($"Загальний час: {x.TotalTime} хв");
+    }
+}
